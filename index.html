@@ -20,9 +20,9 @@
                 extend: {
                     colors: {
                         brand: {
-                            primary: '#0f172a', // الأزرق الداكن
+                            primary: '#0f172a', 
                             secondary: '#1e293b',
-                            accent: '#fbbf24', // الذهبي
+                            accent: '#fbbf24', 
                         }
                     },
                     fontFamily: {
@@ -39,6 +39,10 @@
     
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Firebase SDK (Compat version for simplicity) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
     
     <style>
         body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }
@@ -104,9 +108,14 @@
                             <span id="roleBadge" class="text-brand-accent font-bold text-xs bg-black/30 px-2 py-0.5 rounded"></span>
                         </div>
                     </div>
-                    <button onclick="logout()" class="bg-red-500/20 text-red-100 hover:bg-red-500 p-2 rounded-lg text-sm font-bold transition">
-                        <i class="fa-solid fa-power-off"></i> <span class="hidden sm:inline">خروج</span>
-                    </button>
+                    <div class="flex items-center gap-4">
+                        <div class="hidden sm:flex items-center gap-2 bg-green-500/20 text-green-300 px-3 py-1 rounded-full text-xs font-bold">
+                            <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span> متصل
+                        </div>
+                        <button onclick="logout()" class="bg-red-500/20 text-red-100 hover:bg-red-500 p-2 rounded-lg text-sm font-bold transition">
+                            <i class="fa-solid fa-power-off"></i> <span class="hidden sm:inline">خروج</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </header>
@@ -114,7 +123,7 @@
         <!-- المحتوى (Dashboard) -->
         <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
             
-            <!-- 1. السجل الرسمي للاجتماعات (في المقدمة) -->
+            <!-- 1. السجل الرسمي للاجتماعات -->
             <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-50 border-b border-slate-200 px-5 py-4 flex flex-wrap justify-between items-center gap-3">
                     <h3 class="font-bold text-slate-800 text-lg flex items-center gap-2">
@@ -125,7 +134,7 @@
                         <i class="fa-solid fa-search absolute right-3.5 top-3 text-slate-400 text-xs"></i>
                     </div>
                 </div>
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto relative">
                     <table class="w-full text-right border-collapse min-w-[600px]">
                         <thead class="bg-brand-primary text-white text-sm">
                             <tr>
@@ -137,7 +146,7 @@
                             </tr>
                         </thead>
                         <tbody id="meetingsTableBody" class="divide-y divide-slate-100 text-sm">
-                            <!-- Data -->
+                            <tr><td colspan="5" class="text-center py-6 text-slate-500"><i class="fa-solid fa-circle-notch fa-spin"></i> جاري تحميل البيانات...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -166,7 +175,7 @@
                 </div>
             </section>
 
-            <!-- 3. نموذج الإضافة (يظهر لمدير المكتب فقط) -->
+            <!-- 3. نموذج الإضافة -->
             <section id="managerPanel" class="hidden max-w-2xl mx-auto w-full pb-10">
                 <div class="bg-white rounded-2xl shadow-md border-t-4 border-brand-primary overflow-hidden">
                     <div class="bg-slate-50 border-b border-slate-100 px-5 py-4">
@@ -208,7 +217,7 @@
                         </div>
                         
                         <div class="flex gap-2 pt-2">
-                            <button type="submit" class="flex-grow bg-brand-primary text-white font-bold py-2.5 rounded-xl hover:bg-brand-secondary transition">حفظ</button>
+                            <button type="submit" id="submitBtn" class="flex-grow bg-brand-primary text-white font-bold py-2.5 rounded-xl hover:bg-brand-secondary transition">حفظ في السحابة</button>
                             <button type="button" onclick="resetForm()" class="bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl hover:bg-slate-300 transition">إلغاء</button>
                         </div>
                     </form>
@@ -219,8 +228,22 @@
 
     <!-- السكربت والمنطق -->
     <script>
+        // إعدادات Firebase الخاصة بك
+        const firebaseConfig = {
+            apiKey: "AIzaSyC3jZ0Ee30JNoKd6Swt3Pve0mnY3SxyLqQ",
+            authDomain: "deanerysystem.firebaseapp.com",
+            projectId: "deanerysystem",
+            storageBucket: "deanerysystem.firebasestorage.app",
+            messagingSenderId: "881015172460",
+            appId: "1:881015172460:web:9d70ae18a7c8a3a82f1749"
+        };
+
+        // تهيئة Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
         let currentRole = null;
-        let meetings = JSON.parse(localStorage.getItem('deanery_meetings')) || [];
+        let meetings = [];
         let chartInstance = null;
 
         // Login Logic
@@ -253,6 +276,18 @@
             document.getElementById('loginView').classList.remove('hidden');
         };
 
+        // الاستماع للتحديثات اللحظية من قاعدة البيانات
+        db.collection("meetings").onSnapshot((querySnapshot) => {
+            meetings = [];
+            querySnapshot.forEach((doc) => {
+                meetings.push({ id: doc.id, ...doc.data() });
+            });
+            renderDashboard(document.getElementById('searchInput').value.toLowerCase());
+        }, (error) => {
+            console.error("خطأ في جلب البيانات: ", error);
+            alert("حدث خطأ في الاتصال بقاعدة البيانات. يرجى التأكد من تفعيل وضع الاختبار (Test Mode) في Firestore.");
+        });
+
         // Form Logic
         window.toggleOutcomes = () => {
             const status = document.getElementById('statusInput').value;
@@ -263,14 +298,18 @@
         window.resetForm = () => {
             document.getElementById('meetingForm').reset();
             document.getElementById('meetingId').value = '';
+            document.getElementById('submitBtn').innerHTML = 'حفظ في السحابة';
             toggleOutcomes();
         };
 
-        document.getElementById('meetingForm').addEventListener('submit', (e) => {
+        document.getElementById('meetingForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جاري الحفظ...';
+            btn.disabled = true;
+
             const id = document.getElementById('meetingId').value;
-            const meeting = {
-                id: id || Date.now().toString(),
+            const meetingData = {
                 entity: document.getElementById('entityInput').value,
                 date: document.getElementById('dateInput').value,
                 time: document.getElementById('timeInput').value,
@@ -278,16 +317,20 @@
                 outcomes: document.getElementById('statusInput').value === 'completed' ? document.getElementById('outcomesInput').value : ''
             };
 
-            if (id) {
-                const idx = meetings.findIndex(m => m.id === id);
-                meetings[idx] = meeting;
-            } else {
-                meetings.push(meeting);
+            try {
+                if (id) {
+                    await db.collection("meetings").doc(id).update(meetingData);
+                } else {
+                    await db.collection("meetings").add(meetingData);
+                }
+                resetForm();
+            } catch (error) {
+                console.error("Error adding document: ", error);
+                alert("حدث خطأ أثناء حفظ الاجتماع.");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'حفظ في السحابة';
             }
-            
-            localStorage.setItem('deanery_meetings', JSON.stringify(meetings));
-            resetForm();
-            renderDashboard();
         });
 
         window.editMeeting = (id) => {
@@ -299,109 +342,17 @@
                 document.getElementById('timeInput').value = meeting.time;
                 document.getElementById('statusInput').value = meeting.status;
                 document.getElementById('outcomesInput').value = meeting.outcomes || '';
+                document.getElementById('submitBtn').innerHTML = 'تحديث البيانات';
                 toggleOutcomes();
                 document.getElementById('entityInput').focus();
             }
         };
 
-        window.deleteMeeting = (id) => {
+        window.deleteMeeting = async (id) => {
             if(confirm('هل أنت متأكد من حذف هذا الاجتماع؟')) {
-                meetings = meetings.filter(m => m.id !== id);
-                localStorage.setItem('deanery_meetings', JSON.stringify(meetings));
-                renderDashboard();
-            }
-        };
-
-        // Search
-        document.getElementById('searchInput').addEventListener('input', (e) => {
-            renderDashboard(e.target.value.toLowerCase());
-        });
-
-        function getStatusInfo(status) {
-            switch(status) {
-                case 'completed': return { text: 'مكتمل', color: 'bg-green-100 text-green-700' };
-                case 'postponed': return { text: 'مؤجل', color: 'bg-red-100 text-red-700' };
-                default: return { text: 'قادم', color: 'bg-amber-100 text-amber-700' };
-            }
-        }
-
-        // Render Data
-        function renderDashboard(searchTerm = '') {
-            const tbody = document.getElementById('meetingsTableBody');
-            const directivesList = document.getElementById('directivesList');
-            tbody.innerHTML = '';
-            directivesList.innerHTML = '';
-            
-            let stats = { upcoming: 0, completed: 0, postponed: 0 };
-            
-            // Sort by date descending
-            let sortedMeetings = [...meetings].sort((a,b) => new Date(b.date) - new Date(a.date));
-            
-            let filtered = sortedMeetings.filter(m => m.entity.toLowerCase().includes(searchTerm));
-
-            filtered.forEach((meeting, idx) => {
-                // Table Row
-                const statusInfo = getStatusInfo(meeting.status);
-                stats[meeting.status]++;
-                
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td class="py-3 px-4 font-bold text-center">${idx + 1}</td>
-                    <td class="py-3 px-4 font-bold">${meeting.entity}</td>
-                    <td class="py-3 px-4 font-mono text-sm">${meeting.date} <br> <span class="text-slate-500">${meeting.time}</span></td>
-                    <td class="py-3 px-4"><span class="px-2 py-1 rounded text-xs font-bold ${statusInfo.color}">${statusInfo.text}</span></td>
-                    ${currentRole === 'manager' ? `
-                    <td class="py-3 px-4 text-center">
-                        <button onclick="editMeeting('${meeting.id}')" class="text-blue-600 mx-1"><i class="fa-solid fa-pen"></i></button>
-                        <button onclick="deleteMeeting('${meeting.id}')" class="text-red-600 mx-1"><i class="fa-solid fa-trash"></i></button>
-                    </td>` : ''}
-                `;
-                tbody.appendChild(tr);
-
-                // Directives (Only if completed and has outcomes)
-                if (meeting.status === 'completed' && meeting.outcomes.trim() !== '') {
-                    const div = document.createElement('div');
-                    div.className = "bg-green-50 border-r-4 border-green-500 p-3 rounded text-sm";
-                    div.innerHTML = `
-                        <p class="font-bold text-green-800 mb-1">${meeting.entity} <span class="text-xs text-green-600 font-normal">(${meeting.date})</span></p>
-                        <p class="text-slate-700">${meeting.outcomes}</p>
-                    `;
-                    directivesList.appendChild(div);
+                try {
+                    await db.collection("meetings").doc(id).delete();
+                } catch (error) {
+                    console.error("Error deleting document: ", error);
+                    alert("حدث خطأ أثناء الحذف.");
                 }
-            });
-
-            if(filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-slate-500">لا توجد اجتماعات في السجل.</td></tr>`;
-            }
-            if(directivesList.innerHTML === '') {
-                directivesList.innerHTML = `<div class="text-center text-slate-400 py-6 text-sm">لا توجد مخرجات مسجلة.</div>`;
-            }
-
-            renderChart(stats);
-        }
-
-        // Chart.js
-        function renderChart(stats) {
-            const ctx = document.getElementById('statusChart').getContext('2d');
-            if(chartInstance) chartInstance.destroy();
-            
-            chartInstance = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['قادم', 'مكتمل', 'مؤجل'],
-                    datasets: [{
-                        data: [stats.upcoming, stats.completed, stats.postponed],
-                        backgroundColor: ['#fbbf24', '#22c55e', '#ef4444'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom', labels: { font: { family: 'Cairo' } } } }
-                }
-            });
-        }
-    </script>
-</body>
-</html>
